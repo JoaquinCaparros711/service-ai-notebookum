@@ -1,9 +1,9 @@
 services: 
     ai:
-        build:
-            context: .
-            dockerfile: Dockerfile
-        image: notebookum-ai:latest
+        # build:
+        #     context: .
+        #     dockerfile: Dockerfile
+        image: notebookum-ai:v1.0.0
         restart: unless-stopped
         # LOAD BALANCER PATTERN
         deploy:
@@ -13,18 +13,17 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.ai.rule=Host(`ai.internal`)"
-            - "traefik.http.services.ai.loadbalancer.server.port=5002"
+            - "traefik.http.services.ai.loadbalancer.server.port=5000"
             # CIRCUIT BREAKER PATTERN
             - "traefik.http.middlewares.cb-ai.circuitbreaker.expression=NetworkErrorRatio() > 0.5"
             # BULKHEAD PATTERN
             - "traefik.http.middlewares.bulkhead-ai.inflightreq.amount=15"
             - "traefik.http.routers.ai.middlewares=cb-ai,bulkhead-ai"
-        volumes:
-            - ./app:/app/app:ro
-            - ./main.py:/app/main.py:ro
+        # volumes:
+        #     - ./app:/app/app:ro
+        #     - ./main.py:/app/main.py:ro
         environment:
             - FLASK_ENV=development
-            - PORT=5002
             - OPENAI_API_KEY=${OPENAI_API_KEY:-}
             - GEMMA_API_KEY=${GEMMA_API_KEY:-}
             - GEMMA_API_URL=${GEMMA_API_URL:-}
