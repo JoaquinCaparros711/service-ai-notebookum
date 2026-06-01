@@ -73,9 +73,9 @@ class AIService:
         resolved_language = language or self.detect_language(normalized_text)
         if self.client is not None:
             try:
-                response = self.client.responses.create(
+                completion = self.client.chat.completions.create(
                     model=self.settings.summary_model,
-                    input=[
+                    messages=[
                         {
                             "role": "system",
                             "content": (
@@ -89,9 +89,13 @@ class AIService:
                         },
                     ],
                 )
-                output_text = getattr(response, "output_text", "") or ""
-                if output_text.strip():
-                    return output_text.strip()
+                response_text = ""
+                try:
+                    response_text = completion.choices[0].message.content or ""
+                except Exception:
+                    response_text = ""
+                if response_text.strip():
+                    return response_text.strip()
             except Exception:
                 pass
 
