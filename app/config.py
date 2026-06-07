@@ -26,10 +26,10 @@ class BaseConfig:
     DEBUG = False
     TESTING = False
     LLM = LLMConfig(
-        api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMMA_API_KEY", ""),
-        base_url=os.environ.get("GEMMA_API_URL"),
-        chat_model=os.environ.get("GEMMA_MODEL", "gemma3-4b"),
-        summary_model=os.environ.get("SUMMARY_MODEL", "gpt-4o-mini"),
+        api_key=os.environ.get("NVIDIA_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMMA_API_KEY", ""),
+        base_url=os.environ.get("AI_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        chat_model=os.environ.get("CHAT_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
+        summary_model=os.environ.get("SUMMARY_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
     )
 
 
@@ -53,8 +53,8 @@ class TestingConfig(BaseConfig):
     LLM = LLMConfig(
         api_key="",
         base_url=None,
-        chat_model="gemma3-4b",
-        summary_model="gpt-4o-mini",
+        chat_model="nvidia/nemotron-3-ultra-550b-a55b",
+        summary_model="nvidia/nemotron-3-ultra-550b-a55b",
     )
 
 

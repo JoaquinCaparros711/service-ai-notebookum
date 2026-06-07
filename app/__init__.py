@@ -3,10 +3,18 @@
 import os
 
 from flask import Flask
+from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .config import config
 from .services.ai_service import AIService
+
+_CORS_ORIGINS = [
+    "https://api.universidad.localhost",
+    "http://localhost",
+    r"http://localhost:\d+",
+    "null",  # file:// pages
+]
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -19,6 +27,8 @@ def create_app(config_name: str | None = None) -> Flask:
     app.config.from_object(config[config_name])
     app.ai_service = AIService.from_config(app.config["LLM"])
     app.config.setdefault("MAX_CONTENT_LENGTH", 25 * 1024 * 1024)
+
+    CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
 
     register_error_handlers(app)
 

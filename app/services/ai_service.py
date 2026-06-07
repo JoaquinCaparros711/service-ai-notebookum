@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import time
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 try:
     from openai import OpenAI
-except Exception:  # pragma: no cover - import guard for constrained environments
+except Exception:
     OpenAI = None
 
 
@@ -29,110 +31,115 @@ class AIService:
         self.client = None
         if OpenAI is not None and settings.api_key:
             self.client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+            logger.info("AI backend: %s — model: %s", settings.base_url or "OpenAI", settings.summary_model)
+        else:
+            logger.warning("AI backend: local fallback only (no api_key)")
 
     @classmethod
     def from_config(cls, config) -> "AIService":
-        """Build the service from a Flask config object."""
-
         settings = AISettings(
             api_key=getattr(config, "api_key", ""),
             base_url=getattr(config, "base_url", None),
-            chat_model=getattr(config, "chat_model", "gemma3-4b"),
-            summary_model=getattr(config, "summary_model", "gpt-4o-mini"),
+            chat_model=getattr(config, "chat_model", "nvidia/nemotron-4-340b-instruct"),
+            summary_model=getattr(config, "summary_model", "nvidia/nemotron-4-340b-instruct"),
         )
         return cls(settings)
 
     def chat(self, message: str) -> str:
-        """Return a chat completion or a deterministic fallback."""
-
-        normalized_message = message.strip()
-        if not normalized_message:
+        normalized = message.strip()
+        if not normalized:
             raise ValueError("message is required")
 
         if self.client is not None:
             try:
                 completion = self.client.chat.completions.create(
                     model=self.settings.chat_model,
-                    messages=[{"role": "user", "content": normalized_message}],
+                    messages=[{"role": "user", "content": normalized}],
+                    temperature=0.7,
+                    max_tokens=1024,
                 )
-                response_text = completion.choices[0].message.content or ""
-                if response_text.strip():
-                    return response_text.strip()
-            except Exception:
-                pass
+                text = (completion.choices[0].message.content or "").strip()
+                if text:
+                    return text
+            except Exception as exc:
+                logger.warning("Chat error: %s", exc)
 
-        return self._fallback_chat_response(normalized_message)
+        return self._fallback_chat_response(normalized)
 
     def summarize_text(self, text: str, language: str | None = None) -> str:
-        """Summarize text with the remote model when available."""
-
-        normalized_text = text.strip()
-        if not normalized_text:
+        normalized = text.strip()
+        if not normalized:
             raise ValueError("text is required")
 
-        resolved_language = language or self.detect_language(normalized_text)
+        resolved_language = language or self.detect_language(normalized)
+        system_prompt, user_prompt = self._build_summary_prompts(normalized, resolved_language)
+
         if self.client is not None:
             try:
                 completion = self.client.chat.completions.create(
                     model=self.settings.summary_model,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a concise summarization assistant. "
-                                f"Respond only in {'Spanish' if resolved_language == 'es' else 'English'}."
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": f"Summarize the following text:\n\n{normalized_text}",
-                        },
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
                     ],
+                    temperature=0.6,
+                    top_p=0.95,
+                    max_tokens=1024,
                 )
-                response_text = ""
-                try:
-                    response_text = completion.choices[0].message.content or ""
-                except Exception:
-                    response_text = ""
-                if response_text.strip():
-                    return response_text.strip()
-            except Exception:
-                pass
+                result = (completion.choices[0].message.content or "").strip()
+                if result:
+                    return result
+            except Exception as exc:
+                logger.warning("Summarize error: %s", exc)
 
-        return self._summarize_locally(normalized_text, resolved_language)
+        return self._summarize_locally(normalized, resolved_language)
+
+    @staticmethod
+    def _build_summary_prompts(text: str, language: str) -> tuple[str, str]:
+        if language == "es":
+            system = (
+                "Eres un asistente experto en análisis y síntesis de documentos académicos. "
+                "Genera un resumen estructurado y profesional. El resumen debe:\n"
+                "- Identificar el tema central y los objetivos del trabajo\n"
+                "- Destacar los argumentos, metodología o hallazgos más relevantes\n"
+                "- Mencionar las conclusiones principales\n"
+                "- Ser claro, preciso y bien redactado en español\n"
+                "- Tener entre 150 y 300 palabras"
+            )
+            user = f"Genera un resumen académico estructurado del siguiente documento:\n\n{text}"
+        else:
+            system = (
+                "You are an expert academic document analyst. "
+                "Produce a structured and professional summary. The summary must:\n"
+                "- Identify the central topic and objectives\n"
+                "- Highlight the key arguments, methodology, or findings\n"
+                "- State the main conclusions\n"
+                "- Be clear, precise and well-written in English\n"
+                "- Be between 150 and 300 words"
+            )
+            user = f"Generate a structured academic summary of the following document:\n\n{text}"
+        return system, user
 
     @staticmethod
     def detect_language(text: str) -> str:
-        """Detect basic Spanish or English markers."""
-
         lowered = text.lower()
         spanish_markers = (" el ", " la ", " de ", " y ", " que ", " los ", " las ", " un ")
-        return "es" if any(marker in f" {lowered} " for marker in spanish_markers) else "en"
+        return "es" if any(m in f" {lowered} " for m in spanish_markers) else "en"
 
     @staticmethod
     def _fallback_chat_response(message: str) -> str:
-        """Return a deterministic response when no model is configured."""
-
-        if message.strip().replace(" ", "") == "2+2?" or "2+2" in message:
-            return "Gemma fallback response: 4"
-        return f"Gemma fallback response: {message[:120]}"
+        if "2+2" in message:
+            return "Fallback: 4"
+        return f"Fallback (sin API key): {message[:120]}"
 
     @staticmethod
     def _summarize_locally(text: str, language: str) -> str:
-        """Generate a deterministic local summary fallback."""
-
         normalized = " ".join(text.split())
         if not normalized:
             return ""
-
-        parts = [segment.strip() for segment in normalized.replace("?", ".").split(".") if segment.strip()]
-        if not parts:
-            parts = [normalized]
-
-        selected = parts[:2]
-        body = ". ".join(selected)
+        parts = [s.strip() for s in normalized.replace("?", ".").split(".") if s.strip()]
+        body = ". ".join((parts or [normalized])[:2])
         if not body.endswith("."):
             body += "."
-
         prefix = "Resumen: " if language == "es" else "Summary: "
         return f"{prefix}{body}"
