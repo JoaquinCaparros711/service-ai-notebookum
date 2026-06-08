@@ -1,11 +1,7 @@
 services:
     ai:
-        build:
-            context: .
-            dockerfile: Dockerfile
         image: notebookum-ai:v1.0.0
         restart: unless-stopped
-        # LOAD BALANCER PATTERN
         deploy:
             replicas: 2
         networks:
@@ -17,17 +13,13 @@ services:
             - "traefik.http.routers.ai.rule=Host(`ai.universidad.localhost`)"
             - "traefik.http.routers.ai.entryPoints=https"
             - "traefik.http.routers.ai.tls=true"
-            - "traefik.http.routers.ai.middlewares=cb-ai,bulkhead-ai,cors-ai"
+            - "traefik.http.routers.ai.middlewares=cors-ai"
             # CORS via Traefik (para dashboard desde file://)
             - "traefik.http.middlewares.cors-ai.headers.accesscontrolalloworiginlist=*"
             - "traefik.http.middlewares.cors-ai.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
             - "traefik.http.middlewares.cors-ai.headers.accesscontrolallowheaders=Content-Type,Authorization"
             - "traefik.http.middlewares.cors-ai.headers.addvaryheader=true"
             - "traefik.http.services.ai.loadbalancer.server.port=5000"
-            # CIRCUIT BREAKER PATTERN
-            - "traefik.http.middlewares.cb-ai.circuitbreaker.expression=NetworkErrorRatio() > 0.5"
-            # BULKHEAD PATTERN
-            - "traefik.http.middlewares.bulkhead-ai.inflightreq.amount=15"
         # volumes:
         #     - ./app:/app/app:ro
         #     - ./main.py:/app/main.py:ro

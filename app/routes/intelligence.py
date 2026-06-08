@@ -13,28 +13,56 @@ from ..services.pdf_service import extract_text_from_pdf, is_pdf_upload
 logger = logging.getLogger(__name__)
 
 
-def _save_to_persistence(document_payload: dict, summary_content: str, model_used: str) -> dict | None:
-    """Save document + summary to persistence service. Returns dict with document_id on success."""
+def _get_redis():
+    """Return a Redis client using env vars; raises on failure."""
+    import redis as redis_lib
+    return redis_lib.Redis(
+        host=os.environ.get("REDIS_HOST", "redis"),
+        port=int(os.environ.get("REDIS_PORT", 6379)),
+        password=os.environ.get("REDIS_PASSWORD") or None,
+        decode_responses=True,
+    )
+
+
+def _save_to_persistence(document_payload: dict, summary_content: str, model_used: str,
+                          document_uuid: str | None = None) -> dict | None:
+    """Save document + summary to persistence service. Returns dict with doc integer id on success."""
     base_url = os.environ.get("PERSISTENCE_URL", "").rstrip("/")
     if not base_url:
         logger.warning("PERSISTENCE_URL not set — skipping persistence save")
         return None
     try:
-        doc_resp = http_requests.post(
-            f"{base_url}/api/v1/documents",
-            json=document_payload,
-            timeout=10,
-        )
-        doc_resp.raise_for_status()
-        doc_data = doc_resp.json()
-        doc_id = doc_data.get("id")
+        # Get-or-create document by UUID to avoid unique constraint violations on re-summarization
+        doc_id = None
+        if document_uuid:
+            document_payload["documentUuid"] = document_uuid
+            lookup = http_requests.get(
+                f"{base_url}/api/v1/documents/uuid/{document_uuid}", timeout=5
+            )
+            if lookup.status_code == 200:
+                doc_id = lookup.json().get("id")
+                logger.info("Reusing existing persistence document id=%s for uuid=%s", doc_id, document_uuid)
+
         if not doc_id:
-            logger.warning("Persistence returned no document id: %s", doc_data)
-            return None
+            doc_resp = http_requests.post(
+                f"{base_url}/api/v1/documents",
+                json=document_payload,
+                timeout=10,
+            )
+            doc_resp.raise_for_status()
+            doc_id = doc_resp.json().get("id")
+            if not doc_id:
+                logger.warning("Persistence returned no document id: %s", doc_resp.json())
+                return None
 
         summary_resp = http_requests.post(
             f"{base_url}/api/v1/summaries",
-            json={"documentId": doc_id, "content": summary_content, "modelUsed": model_used},
+            json={
+                "documentId": doc_id,
+                "content": summary_content,
+                "modelUsed": model_used,
+                "documentUuid": document_uuid,
+            },
             timeout=10,
         )
         summary_resp.raise_for_status()
@@ -114,7 +142,13 @@ def summarize_from_extraction():
         return jsonify({"error": "extraction contains no text"}), 422
 
     language = (data.get("language") or "").strip() or None
-    user_id = data.get("user_id") or 1
+    # user_id: from request body (set by Controller from JWT) → from Redis extraction → fallback 1
+    # Force integer so Jackson deserializes it as Long (not as JSON string)
+    raw_uid = data.get("user_id") or extraction.get("user_id") or 1
+    try:
+        user_id = int(raw_uid)
+    except (ValueError, TypeError):
+        user_id = 1
     summary = current_app.ai_service.summarize_text(text, language=language)
     model_used = current_app.ai_service.settings.summary_model
 
@@ -126,14 +160,24 @@ def summarize_from_extraction():
         "status": "COMPLETED",
         "extractedText": text,
     }
-    _save_to_persistence(document_payload, summary, model_used)
+    _save_to_persistence(document_payload, summary, model_used, document_uuid=document_id)
 
-    return jsonify({
+    response_body = {
         "document_id": document_id,
         "filename": extraction.get("filename"),
         "job_id": extraction.get("job_id"),
         "summary": summary,
-    }), 200
+    }
+
+    # Force-write to Redis so Controller's fast path works on the next GET
+    try:
+        r = _get_redis()
+        r.setex(f"summary:{document_id}", 3600, json.dumps(response_body))
+        logger.info("Redis force-write: summary:%s", document_id)
+    except Exception as exc:
+        logger.warning("Redis write failed (non-fatal): %s", exc)
+
+    return jsonify(response_body), 200
 
 
 @intelligence_bp.post("/api/upload")
