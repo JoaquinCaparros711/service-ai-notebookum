@@ -1,0 +1,18 @@
+services:
+  ai:
+    image: controller-service-summary-service:latest
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai.rule=Host(`ai.universidad.localhost`)"
+      - "traefik.http.routers.ai.entryPoints=https"
+      - "traefik.http.routers.ai.tls=true"
+      - "traefik.http.routers.ai.middlewares=cors-ai"
+      # CORS via Traefik (para dashboard desde file://)
+      - "traefik.http.middlewares.cors-ai.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.cors-ai.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
+      - "traefik.http.middlewares.cors-ai.headers.accesscontrolallowheaders=Content-Type,Authorization"
+      - "traefik.http.middlewares.cors-ai.headers.addvaryheader=true"
+      - "traefik.http.services.ai.loadbalancer.server.port=8003"
+
