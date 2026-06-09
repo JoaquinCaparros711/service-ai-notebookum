@@ -1,6 +1,6 @@
 services:
     ai:
-        image: notebookum-ai:v1.0.0
+        image: notebookum-ai:v1.1.0
         restart: unless-stopped
         deploy:
             replicas: 2
@@ -32,7 +32,7 @@ services:
             - REDIS_HOST=redis
             - REDIS_PORT=6379
             - REDIS_PASSWORD=${REDIS_PASSWORD:-Rediscontra123!}
-            - PERSISTENCE_URL=http://persistence-java.universidad.localhost:8080
+            - CONSUL_URL=http://consul:8500
 
 networks:
     notebookum-network:

@@ -31,8 +31,11 @@ def create_app(config_name: str | None = None) -> Flask:
     CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
 
     register_error_handlers(app)
-
     register_blueprints(app)
+
+    from .utils.consul import register_ai
+    register_ai()
+
     return app
 
 
