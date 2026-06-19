@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _CONSUL_URL = os.environ.get("CONSUL_URL", "http://consul:8500")
 
-_AI_TAGS = [
+_AI_DEFAULT_TAGS = [
     "traefik.enable=true",
     "traefik.http.routers.ai.rule=Host(`ai.universidad.localhost`)",
     "traefik.http.routers.ai.entryPoints=https",
@@ -28,36 +28,34 @@ _AI_TAGS = [
 
 def register_ai(port: int = 5000) -> None:
     """Register the AI service with Consul on startup."""
-    _start(service_name="ai", port=port, tags=_AI_TAGS)
-
-
-def _start(service_name: str, port: int, tags: list) -> None:
     threading.Thread(
         target=_register_with_retry,
-        args=(service_name, port, tags),
+        args=("ai", port),
         daemon=True,
     ).start()
 
 
-def _register_with_retry(service_name: str, port: int, tags: list) -> None:
+def _register_with_retry(service_name: str, port: int) -> None:
+    from app.utils.consul_kv import get_list
     hostname = socket.gethostname()
     service_id = f"{service_name}-{hostname}"
-    payload = {
-        "ID": service_id,
-        "Name": service_name,
-        "Address": hostname,
-        "Port": port,
-        "Tags": tags,
-        "Check": {
-            "HTTP": f"http://{hostname}:{port}/health",
-            "Interval": "15s",
-            "Timeout": "5s",
-            "DeregisterCriticalServiceAfter": "30s",
-        },
-    }
 
     for attempt in range(10):
         try:
+            tags = get_list("traefik_tags", _AI_DEFAULT_TAGS)
+            payload = {
+                "ID": service_id,
+                "Name": service_name,
+                "Address": hostname,
+                "Port": port,
+                "Tags": tags,
+                "Check": {
+                    "HTTP": f"http://{hostname}:{port}/health",
+                    "Interval": "15s",
+                    "Timeout": "5s",
+                    "DeregisterCriticalServiceAfter": "30s",
+                },
+            }
             resp = requests.put(
                 f"{_CONSUL_URL}/v1/agent/service/register",
                 json=payload,

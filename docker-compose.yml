@@ -1,6 +1,6 @@
 services:
     ai:
-        image: notebookum-ai:v1.1.0
+        image: notebookum-ai:v1.2.0
         restart: unless-stopped
         deploy:
             replicas: 2
@@ -8,30 +8,7 @@ services:
             notebookum-network:
                 aliases:
                     - ai.universidad.localhost
-        labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.ai.rule=Host(`ai.universidad.localhost`)"
-            - "traefik.http.routers.ai.entryPoints=https"
-            - "traefik.http.routers.ai.tls=true"
-            - "traefik.http.routers.ai.middlewares=cors-ai"
-            # CORS via Traefik (para dashboard desde file://)
-            - "traefik.http.middlewares.cors-ai.headers.accesscontrolalloworiginlist=*"
-            - "traefik.http.middlewares.cors-ai.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
-            - "traefik.http.middlewares.cors-ai.headers.accesscontrolallowheaders=Content-Type,Authorization"
-            - "traefik.http.middlewares.cors-ai.headers.addvaryheader=true"
-            - "traefik.http.services.ai.loadbalancer.server.port=5000"
-        # volumes:
-        #     - ./app:/app/app:ro
-        #     - ./main.py:/app/main.py:ro
         environment:
-            - FLASK_ENV=development
-            - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
-            - AI_BASE_URL=https://integrate.api.nvidia.com/v1
-            - SUMMARY_MODEL=nvidia/nemotron-3-ultra-550b-a55b
-            - CHAT_MODEL=nvidia/nemotron-3-ultra-550b-a55b
-            - REDIS_HOST=redis
-            - REDIS_PORT=6379
-            - REDIS_PASSWORD=${REDIS_PASSWORD:-Rediscontra123!}
             - CONSUL_URL=http://consul:8500
 
 networks:
