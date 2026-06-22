@@ -95,6 +95,12 @@ class AIService:
         return self._summarize_locally(normalized, resolved_language)
 
     @staticmethod
+    def detect_language(text: str) -> str:
+        lowered = text.lower()
+        spanish_markers = (" el ", " la ", " de ", " y ", " que ", " los ", " las ", " un ")
+        return "es" if any(m in f" {lowered} " for m in spanish_markers) else "en"
+
+    @staticmethod
     def _build_summary_prompts(text: str, language: str) -> tuple[str, str]:
         if language == "es":
             system = (
@@ -119,12 +125,6 @@ class AIService:
             )
             user = f"Generate a structured academic summary of the following document:\n\n{text}"
         return system, user
-
-    @staticmethod
-    def detect_language(text: str) -> str:
-        lowered = text.lower()
-        spanish_markers = (" el ", " la ", " de ", " y ", " que ", " los ", " las ", " un ")
-        return "es" if any(m in f" {lowered} " for m in spanish_markers) else "en"
 
     @staticmethod
     def _fallback_chat_response(message: str) -> str:
